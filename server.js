@@ -9,3 +9,5 @@ app.listen(3000,()=>{
     console.log("Server is started")
 })
 
+
+// main server isi file se run hoga humesha
