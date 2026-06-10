@@ -33,6 +33,19 @@ async function userRegisterController(req, res){
 
 }
 
+// -User Login controller
+// -POST /api/auth/login
+async function userLoginController(req, res) {
+    const {email, password} = req.body
+    const user = await userModel.findOne({email})
+
+    if(!user){
+        return req.status(401).json({
+            message:"Email or Password is INVALID"
+        })
+    }
+}
+
 module.exports = {
     userRegisterController
 }
