@@ -33,6 +33,7 @@ async function userRegisterController(req, res){
 
 }
 
+
 // -User Login controller
 // -POST /api/auth/login
 async function userLoginController(req, res) {
