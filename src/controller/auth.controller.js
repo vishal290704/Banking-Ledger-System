@@ -2,6 +2,8 @@ const { model } = require("mongoose")
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
 
+
+//api for register
 // -User register controller
 // -POST /api/auth/register
 async function userRegisterController(req, res){
