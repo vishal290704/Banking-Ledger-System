@@ -8,4 +8,16 @@ async function authMiddleware(req, res, next){
             message:"Unauthorized access, token is missing"
         })
      }
+
+     try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET)
+        const user = await userModel.findById(decoded.userId)
+        req.user = user
+        return next()
+
+     } catch (err) {
+        return res.status(401).json({
+            message:"Unauthorized access, token is invalid"
+        })
+     }
 }
