@@ -72,4 +72,11 @@ async function createTransaction(req, res){
             message:"Both fromAccount and toAccount must be ACTIVE to process transaction"
         })
     }
+
+    /**
+     * Derive sender balance from ledger
+     */
+    const balance = await fromUserAccount.getBalance()
+
+
 }
