@@ -77,6 +77,11 @@ async function createTransaction(req, res){
      * Derive sender balance from ledger
      */
     const balance = await fromUserAccount.getBalance()
+    if(balance < amount){
+       return res.status(400).json({
+            message:`Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`
+        })
+    }
 
 
 }
