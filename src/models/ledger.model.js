@@ -19,5 +19,18 @@ const ledgerSchema = new mongoose.Schema({
         required:[true, "Ledger must be associated with a transaction"],
         index:true,
         immutable:true
+    },
+    type:{
+        type:String,
+        enum:{
+            values:["CREDIT", "DEBIT"],
+            message:"Type can be either CREDIT or DEBIT"
+        },
+        required:[true, "Ledger type is required"],
+        immutable:true
     }
 })
+
+function preventLedgermodification(){
+    throw new error ("Ledger entries are immutable and cannot be modified and deleted")
+}
