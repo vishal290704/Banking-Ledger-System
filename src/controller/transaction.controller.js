@@ -56,5 +56,16 @@ async function createTransaction(req, res){
                 message:"Transaction processing failed, please retry"
             })
         }
+             if(isTransactionAlreadyExists=="REVERSED"){
+            res.status(500).json({
+                message:"Transaction was reversed, please retry"
+            })
+        }
     }
+
+    /**
+     * Check account status
+     */
+
+    
 }
