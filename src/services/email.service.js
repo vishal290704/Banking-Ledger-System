@@ -48,6 +48,91 @@ async function sendRegistrationEmail(userEmail, name){
     
     await sendEmail(userEmail, subject, text, html);
 }
+
+async function sendTransactionEmail(userEmail, name, amount, toAccount) {
+    const subject = "Transaction Successful";
+
+    const text = `Hello ${name},
+
+Your transaction has been completed successfully.
+
+Amount: ₹${amount}
+Transferred To: ${toAccount}
+
+Thank you for using Banking Ledger.
+
+Best Regards,
+The Banking Ledger Team`;
+
+    const html = `
+    <h2>Transaction Successful</h2>
+    <p>Hello ${name},</p>
+    <p>Your transaction has been completed successfully.</p>
+
+    <ul>
+        <li><strong>Amount:</strong> ₹${amount}</li>
+        <li><strong>Transferred To:</strong> ${toAccount}</li>
+    </ul>
+
+    <p>Thank you for using Banking Ledger.</p>
+
+    <p>
+        Best Regards,<br>
+        The Banking Ledger Team
+    </p>
+    `;
+
+    await sendEmail(userEmail, subject, text, html);
+}
+
+async function sendTransactionFailureEmail(
+    userEmail,
+    name,
+    amount,
+    toAccount,
+    reason = "Insufficient balance"
+) {
+    const subject = "Transaction Failed";
+
+    const text = `Hello ${name},
+
+We were unable to process your transaction.
+
+Amount: ₹${amount}
+Attempted Transfer To: ${toAccount}
+Reason: ${reason}
+
+Please verify your account details and try again.
+
+Best Regards,
+The Banking Ledger Team`;
+
+    const html = `
+    <h2>Transaction Failed</h2>
+
+    <p>Hello ${name},</p>
+
+    <p>We were unable to process your transaction.</p>
+
+    <ul>
+        <li><strong>Amount:</strong> ₹${amount}</li>
+        <li><strong>Attempted Transfer To:</strong> ${toAccount}</li>
+        <li><strong>Reason:</strong> ${reason}</li>
+    </ul>
+
+    <p>Please verify your account details and try again.</p>
+
+    <p>
+        Best Regards,<br>
+        The Banking Ledger Team
+    </p>
+    `;
+
+    await sendEmail(userEmail, subject, text, html);
+}
+
 module.exports = {
-    sendRegistrationEmail
+    sendRegistrationEmail,
+    sendTransactionEmail,
+    sendTransactionFailureEmail
 };

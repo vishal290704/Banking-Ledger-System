@@ -98,12 +98,36 @@ const transaction = await transactionModel.create({
     status:"PENDING"
 },{session})
 
+const debitLedgerEntry = await ledgerModel.create({
+    account:fromAccount,
+    amount:amount,
+    transaction:transaction._id,
+    type:"DEBIT"
+},{session})
+
+
 const creditLedgerEntry = await ledgerModel.create({
     account:toAccount,
     amount:amount,
     transaction:transaction._id,
     type:"CREDIT"
 },{session})
+
+transaction.status = "COMPLETED"
+await transaction.save({session})
+
+await session.commitTransaction()
+session.endSession()
+
+/**
+ * Send Email Notofication
+ */
+
+await email.emailService.sendTransactionEmail((req.user.email, req.user.name, amount, toUserAccount._id))
+return res.status(200).json({
+    message:"Transaction processed successfully",
+    transaction:transaction
+})
 
 
 
