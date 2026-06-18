@@ -89,8 +89,7 @@ async function sendTransactionFailureEmail(
     userEmail,
     name,
     amount,
-    toAccount,
-    reason = "Insufficient balance"
+    toAccount
 ) {
     const subject = "Transaction Failed";
 
@@ -117,7 +116,6 @@ The Banking Ledger Team`;
     <ul>
         <li><strong>Amount:</strong> ₹${amount}</li>
         <li><strong>Attempted Transfer To:</strong> ${toAccount}</li>
-        <li><strong>Reason:</strong> ${reason}</li>
     </ul>
 
     <p>Please verify your account details and try again.</p>
