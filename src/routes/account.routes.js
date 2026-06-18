@@ -9,4 +9,13 @@ const router = express.Router()
  */
     router.post("/", authMiddleware.authMiddleware, accountController.createAccountController)
 
+/**
+ * -GET /api/accounts/
+ * -Get all bank accounts for the authenticated user
+ * -Protected route, requires authentication
+ */
+
+router.get("/", authMiddleware.authMiddleware, accountController.getUserAccountsController)
+
+
 module.exports = router
