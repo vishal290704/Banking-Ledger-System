@@ -203,7 +203,7 @@ async function createInitialFundsTransaction(req, res){
         transaction:transaction
     })
 }
-
+}
 module.exports = {
     createTransaction,
     createInitialFundsTransaction
