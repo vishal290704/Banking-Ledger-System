@@ -11,6 +11,10 @@ router.post("/login", authController.userLoginController)
 
 module.exports = router
 
+/**
+ * -POST /api/auth/logout
+ */
+router.post("/logout", authController.userLogoutController)
 
 
 

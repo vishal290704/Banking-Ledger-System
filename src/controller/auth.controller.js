@@ -2,6 +2,7 @@ const { model } = require("mongoose")
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
 const emailService= require("../services/email.service")
+const tokenBlackListModel = require("../models/blackList.model") 
 
 //api for register
 // -User register controller
@@ -67,7 +68,28 @@ async function userLoginController(req, res) {
 
 }
 
+/**
+ * -User logout controller
+ * -POST /api/auth/logout
+ */
+async function userLogoutController(req, res){
+    const token = req.cookies.token || req.headers.authorization?.split(" ")[1]
+    if(!token){
+        return res.status(401).json({
+            message:"User logout successfully"
+        })
+    } 
+    res.Cookie("token","")
+    await tokenBlackListModel.create({
+        token:token
+    })
+    res.status(200).json({
+        message:"User logged out successfully"
+    })
+}
+
 module.exports = {
     userRegisterController,
-    userLoginController
+    userLoginController,
+    userLogoutController
 }
