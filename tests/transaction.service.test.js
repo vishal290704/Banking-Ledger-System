@@ -359,4 +359,95 @@ describe("Transaction Service", () => {
             await ledgerModel.countDocuments()
         ).toBe(2)
     })
+        test("should process a concurrent request with the same idempotency key only once", async () => {
+        const results = await Promise.allSettled([
+            transactionService.createTransfer({
+                user: sourceUser,
+                fromAccountId: sourceAccount._id,
+                toAccountId: destinationAccount._id,
+                amount: 100,
+                idempotencyKey: "same-key-001"
+            }),
+
+            transactionService.createTransfer({
+                user: sourceUser,
+                fromAccountId: sourceAccount._id,
+                toAccountId: destinationAccount._id,
+                amount: 100,
+                idempotencyKey: "same-key-001"
+            })
+        ])
+
+        const successfulResults = results.filter(
+            result => result.status === "fulfilled"
+        )
+
+        const failedResults = results.filter(
+            result => result.status === "rejected"
+        )
+
+        /*
+         * Both callers should ultimately succeed from the API's
+         * point of view: one performs the transfer and the other
+         * receives the already-processed transaction.
+         */
+        expect(successfulResults).toHaveLength(2)
+        expect(failedResults).toHaveLength(0)
+
+        const firstTransaction =
+            successfulResults[0].value.transaction
+
+        const secondTransaction =
+            successfulResults[1].value.transaction
+
+        expect(
+            firstTransaction._id.toString()
+        ).toBe(
+            secondTransaction._id.toString()
+        )
+
+        const processedFlags =
+            successfulResults.map(
+                result => result.value.alreadyProcessed
+            )
+
+        expect(
+            processedFlags.filter(
+                value => value === false
+            )
+        ).toHaveLength(1)
+
+        expect(
+            processedFlags.filter(
+                value => value === true
+            )
+        ).toHaveLength(1)
+
+        const source =
+            await accountModel.findById(
+                sourceAccount._id
+            )
+
+        const destination =
+            await accountModel.findById(
+                destinationAccount._id
+            )
+
+        /*
+         * ₹100 should be transferred exactly once.
+         */
+        expect(source.balanceMinor)
+            .toBe(90000)
+
+        expect(destination.balanceMinor)
+            .toBe(60000)
+
+        expect(
+            await transactionModel.countDocuments()
+        ).toBe(1)
+
+        expect(
+            await ledgerModel.countDocuments()
+        ).toBe(2)
+    })
 })

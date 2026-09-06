@@ -150,4 +150,94 @@ describe("Funding Service", () => {
             statusCode: 404
         })
     })
+        test("should process concurrent funding requests with the same idempotency key only once", async () => {
+        const bootstrapService =
+            require("../src/services/bootstrap.service")
+
+        await bootstrapService.bootstrapSystemFunds({
+            user: systemUser,
+            amount: 1000,
+            idempotencyKey: "concurrent-fund-001"
+        })
+
+        const results = await Promise.allSettled([
+            fundingService.createInitialFunding({
+                user: systemUser,
+                customerAccountId: customerAccount._id,
+                amount: 200,
+                idempotencyKey: "same-fund-key-001"
+            }),
+
+            fundingService.createInitialFunding({
+                user: systemUser,
+                customerAccountId: customerAccount._id,
+                amount: 200,
+                idempotencyKey: "same-fund-key-001"
+            })
+        ])
+
+        const successfulResults = results.filter(
+            result => result.status === "fulfilled"
+        )
+
+        const failedResults = results.filter(
+            result => result.status === "rejected"
+        )
+
+        expect(successfulResults).toHaveLength(2)
+        expect(failedResults).toHaveLength(0)
+
+        const firstTransaction =
+            successfulResults[0].value.transaction
+
+        const secondTransaction =
+            successfulResults[1].value.transaction
+
+        expect(
+            firstTransaction._id.toString()
+        ).toBe(
+            secondTransaction._id.toString()
+        )
+
+        const processedFlags =
+            successfulResults.map(
+                result => result.value.alreadyProcessed
+            )
+
+        expect(
+            processedFlags.filter(
+                value => value === false
+            )
+        ).toHaveLength(1)
+
+        expect(
+            processedFlags.filter(
+                value => value === true
+            )
+        ).toHaveLength(1)
+
+        const system =
+            await accountModel.findById(
+                systemAccount._id
+            )
+
+        const customer =
+            await accountModel.findById(
+                customerAccount._id
+            )
+
+        expect(system.balanceMinor)
+            .toBe(80000)
+
+        expect(customer.balanceMinor)
+            .toBe(20000)
+
+        expect(
+            await transactionModel.countDocuments()
+        ).toBe(2)
+
+        expect(
+            await ledgerModel.countDocuments()
+        ).toBe(3)
+    })
 })
