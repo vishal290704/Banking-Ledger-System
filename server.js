@@ -1,13 +1,21 @@
 require("dotenv").config()
 
 const app = require("./src/app")
-const connectToDB = require("./src/config/db") 
+const connectToDB = require("./src/config/db")
 
-connectToDB()
+async function startServer() {
+    try {
+        await connectToDB()
 
-app.listen(3000,()=>{
-    console.log("Server is started")
-})
+        const PORT = process.env.PORT || 3000
 
+        app.listen(PORT, () => {
+            console.log(`Server started on port ${PORT}`)
+        })
+    } catch (error) {
+        console.error("Failed to start server:", error)
+        process.exit(1)
+    }
+}
 
-// main server isi file se run hoga humesha
+startServer()

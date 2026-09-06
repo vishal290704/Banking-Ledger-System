@@ -1,15 +1,22 @@
 {
   "name": "bank-transaction-system",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Banking ledger and transaction system",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx nodemon server.js ",
-    "start": "node server.js"
+    "dev": "npx nodemon server.js",
+    "start": "node server.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "banking",
+    "ledger",
+    "transactions",
+    "backend"
+  ],
+  "author": "Vishal Srivastava",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
@@ -20,5 +27,10 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.3",
     "nodemailer": "^8.0.11"
+  },
+  "devDependencies": {
+    "jest": "^30.5.1",
+    "mongodb-memory-server": "^10.4.3",
+    "supertest": "^7.2.2"
   }
 }
