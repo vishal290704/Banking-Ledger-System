@@ -300,4 +300,63 @@ describe("Transaction Service", () => {
         expect(source.balanceMinor).toBe(89950)
         expect(destination.balanceMinor).toBe(60050)
     })
+
+    test("should prevent concurrent transfers from overspending the source account", async () => {
+        const transferAmount = 800
+
+        const results = await Promise.allSettled([
+            transactionService.createTransfer({
+                user: sourceUser,
+                fromAccountId: sourceAccount._id,
+                toAccountId: destinationAccount._id,
+                amount: transferAmount,
+                idempotencyKey: "concurrent-test-001"
+            }),
+
+            transactionService.createTransfer({
+                user: sourceUser,
+                fromAccountId: sourceAccount._id,
+                toAccountId: destinationAccount._id,
+                amount: transferAmount,
+                idempotencyKey: "concurrent-test-002"
+            })
+        ])
+
+        const successfulTransfers = results.filter(
+            result => result.status === "fulfilled"
+        )
+
+        const failedTransfers = results.filter(
+            result => result.status === "rejected"
+        )
+
+        expect(successfulTransfers).toHaveLength(1)
+        expect(failedTransfers).toHaveLength(1)
+
+        expect(failedTransfers[0].reason).toMatchObject({
+            code: "INSUFFICIENT_FUNDS",
+            statusCode: 400
+        })
+
+        const source =
+            await accountModel.findById(
+                sourceAccount._id
+            )
+
+        const destination =
+            await accountModel.findById(
+                destinationAccount._id
+            )
+
+        expect(source.balanceMinor).toBe(20000)
+        expect(destination.balanceMinor).toBe(130000)
+
+        expect(
+            await transactionModel.countDocuments()
+        ).toBe(1)
+
+        expect(
+            await ledgerModel.countDocuments()
+        ).toBe(2)
+    })
 })
