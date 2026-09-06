@@ -5,63 +5,98 @@ const transactionSchema = new mongoose.Schema(
         fromAccount: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "account",
-            required: [true, "Transaction must be associated with a from account"],
-            index: true
+            required: [
+                true,
+                "Transaction must be associated with a source account"
+            ],
+            index: true,
+            immutable: true
         },
 
         toAccount: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "account",
-            required: [true, "Transaction must be associated with a to account"],
-            index: true
+            required: [
+                true,
+                "Transaction must be associated with a destination account"
+            ],
+            index: true,
+            immutable: true
         },
 
         status: {
             type: String,
             enum: {
-                values: ["PENDING", "COMPLETED", "FAILED", "REVERSED"],
+                values: [
+                    "PENDING",
+                    "COMPLETED",
+                    "FAILED",
+                    "REVERSED"
+                ],
                 message:
-                    "Status can be either PENDING, COMPLETED, FAILED or REVERSED"
+                    "Status can be PENDING, COMPLETED, FAILED or REVERSED"
             },
             default: "PENDING",
             index: true
         },
 
         /*
-         * Amount is stored in the smallest currency unit.
+         * Amount is stored in paise.
          *
-         * Example:
-         * ₹500.25 -> 50025
+         * ₹500.25 => 50025
          */
         amountMinor: {
             type: Number,
-            required: [true, "Amount is required for creating a transaction"],
-            min: [1, "Transaction amount must be greater than zero"],
+            required: [
+                true,
+                "Transaction amount is required"
+            ],
+            min: [
+                1,
+                "Transaction amount must be greater than zero"
+            ],
             validate: {
                 validator: Number.isSafeInteger,
-                message: "Transaction amount must be a safe integer"
-            }
+                message:
+                    "Transaction amount must be a safe integer"
+            },
+            immutable: true
         },
 
+        /*
+         * V1 supports INR only.
+         */
         currency: {
             type: String,
-            required: [true, "Transaction currency is required"],
+            enum: {
+                values: ["INR"],
+                message: "Only INR transactions are supported"
+            },
+            default: "INR",
+            required: true,
             uppercase: true,
             trim: true,
-            default: "INR"
+            immutable: true
         },
 
+        /*
+         * Prevent duplicate processing when clients retry requests.
+         */
         idempotencyKey: {
             type: String,
             required: [
                 true,
-                "Idempotency key is required for creating a transaction"
+                "Idempotency key is required"
             ],
             unique: true,
             index: true,
             trim: true,
-            minlength: 8,
-            maxlength: 128
+            minlength: [8, "Idempotency key is too short"],
+            maxlength: [
+                128,
+                "Idempotency key is too long"
+            ],
+            immutable: true
         }
     },
     {

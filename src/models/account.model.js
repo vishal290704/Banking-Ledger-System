@@ -7,14 +7,16 @@ const accountSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "user",
             required: [true, "Account must be associated with a user"],
-            index: true
+            index: true,
+            immutable: true
         },
 
         status: {
             type: String,
             enum: {
                 values: ["ACTIVE", "FROZEN", "CLOSED"],
-                message: "Status can be either ACTIVE, FROZEN or CLOSED"
+                message:
+                    "Status can be ACTIVE, FROZEN or CLOSED"
             },
             default: "ACTIVE",
             index: true
@@ -22,22 +24,24 @@ const accountSchema = new mongoose.Schema(
 
         currency: {
             type: String,
-            required: [true, "Currency is required for creating an account"],
+            enum: {
+                values: ["INR"],
+                message: "Only INR accounts are supported"
+            },
             default: "INR",
+            required: true,
             uppercase: true,
-            trim: true
+            trim: true,
+            immutable: true
         },
 
         /*
-         * Monetary values are stored in the smallest currency unit.
+         * All monetary values are stored in paise.
          *
-         * Example:
-         * ₹100.50 -> 10050 paise
+         * ₹1      -> 100
+         * ₹100.50 -> 10050
          *
-         * This avoids floating-point precision problems.
-         *
-         * This value is a materialized/cached balance.
-         * The immutable ledger remains the audit trail.
+         * This avoids floating-point money calculations.
          */
         balanceMinor: {
             type: Number,
@@ -55,26 +59,35 @@ const accountSchema = new mongoose.Schema(
     }
 )
 
-accountSchema.index({ user: 1, status: 1 })
-accountSchema.index({ user: 1, currency: 1 })
+/*
+ * Useful for user account listing and lookup.
+ */
+accountSchema.index({
+    user: 1,
+    status: 1
+})
+
+accountSchema.index({
+    user: 1,
+    currency: 1
+})
 
 /*
- * Returns the current materialized balance in minor units.
- *
- * Example:
- * 10050 => ₹100.50
+ * Fast current balance.
  */
-accountSchema.methods.getBalance = async function () {
+accountSchema.methods.getBalance = function () {
     return this.balanceMinor
 }
 
 /*
- * This method is useful for verification/reconciliation.
+ * Recalculate the balance from the immutable ledger.
  *
- * It calculates the balance from the immutable ledger and can be
- * compared against balanceMinor to detect inconsistencies.
+ * This is NOT used for every transaction.
+ * It is intended for reconciliation/audit checks.
  */
-accountSchema.methods.getLedgerBalance = async function (session = null) {
+accountSchema.methods.getLedgerBalance = async function (
+    session = null
+) {
     const pipeline = [
         {
             $match: {
@@ -110,27 +123,33 @@ accountSchema.methods.getLedgerBalance = async function (session = null) {
             $project: {
                 _id: 0,
                 balanceMinor: {
-                    $subtract: ["$totalCredit", "$totalDebit"]
+                    $subtract: [
+                        "$totalCredit",
+                        "$totalDebit"
+                    ]
                 }
             }
         }
     ]
 
-    const query = ledgerModel.aggregate(pipeline)
+    const aggregate = ledgerModel.aggregate(pipeline)
 
     if (session) {
-        query.session(session)
+        aggregate.session(session)
     }
 
-    const balanceData = await query
+    const result = await aggregate
 
-    if (balanceData.length === 0) {
+    if (result.length === 0) {
         return 0
     }
 
-    return balanceData[0].balanceMinor
+    return result[0].balanceMinor
 }
 
-const accountModel = mongoose.model("account", accountSchema)
+const accountModel = mongoose.model(
+    "account",
+    accountSchema
+)
 
 module.exports = accountModel

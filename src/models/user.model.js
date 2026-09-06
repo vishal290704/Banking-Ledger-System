@@ -35,10 +35,10 @@ const userSchema = new mongoose.Schema(
         },
 
         /*
-         * This field MUST NOT be supplied through normal registration.
+         * System users are internal users.
          *
-         * It is immutable so an existing system user cannot be changed
-         * into a normal user and vice versa through an ordinary update.
+         * Normal registration never accepts this field.
+         * It is immutable so it cannot be changed later.
          */
         systemUser: {
             type: Boolean,
@@ -53,9 +53,7 @@ const userSchema = new mongoose.Schema(
 )
 
 /*
- * Hash password before saving it.
- *
- * Password is only hashed when it has been modified.
+ * Hash password before saving.
  */
 userSchema.pre("save", async function (next) {
     try {
@@ -65,16 +63,16 @@ userSchema.pre("save", async function (next) {
 
         this.password = await bcrypt.hash(this.password, 12)
 
-        return next()
+        next()
     } catch (error) {
-        return next(error)
+        next(error)
     }
 })
 
-/**
- * Compare plain-text password with stored bcrypt hash.
+/*
+ * Compare plain password with stored hash.
  */
-userSchema.methods.comparePassword = async function (password) {
+userSchema.methods.comparePassword = function (password) {
     return bcrypt.compare(password, this.password)
 }
 

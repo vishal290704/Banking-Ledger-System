@@ -5,20 +5,33 @@ const ledgerSchema = new mongoose.Schema(
         account: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "account",
-            required: [true, "Ledger must be associated with an account"],
+            required: [
+                true,
+                "Ledger must be associated with an account"
+            ],
             index: true,
             immutable: true
         },
 
+        /*
+         * Amount stored in paise.
+         */
         amountMinor: {
             type: Number,
-            required: [true, "Amount is required for creating a ledger entry"],
-            min: [1, "Ledger amount must be greater than zero"],
-            immutable: true,
+            required: [
+                true,
+                "Ledger amount is required"
+            ],
+            min: [
+                1,
+                "Ledger amount must be greater than zero"
+            ],
             validate: {
                 validator: Number.isSafeInteger,
-                message: "Ledger amount must be a safe integer"
-            }
+                message:
+                    "Ledger amount must be a safe integer"
+            },
+            immutable: true
         },
 
         transaction: {
@@ -36,10 +49,12 @@ const ledgerSchema = new mongoose.Schema(
             type: String,
             enum: {
                 values: ["CREDIT", "DEBIT"],
-                message: "Type can be either CREDIT or DEBIT"
+                message:
+                    "Type can only be CREDIT or DEBIT"
             },
-            required: [true, "Ledger type is required"],
-            immutable: true
+            required: true,
+            immutable: true,
+            index: true
         }
     },
     {
@@ -48,11 +63,17 @@ const ledgerSchema = new mongoose.Schema(
 )
 
 /*
- * A transaction should normally produce exactly one debit
- * and one credit ledger entry.
+ * For a normal transfer:
  *
- * This prevents accidentally creating duplicate entries of
- * the same type for the same transaction/account combination.
+ * Transaction X
+ * Account A
+ * DEBIT
+ *
+ * Transaction X
+ * Account B
+ * CREDIT
+ *
+ * There cannot be a second identical posting.
  */
 ledgerSchema.index(
     {
@@ -66,9 +87,10 @@ ledgerSchema.index(
 )
 
 /*
- * Ledger entries are append-only.
+ * Ledger is append-only.
  *
- * No update/delete operation should be permitted after creation.
+ * Financial history must not be modified or deleted
+ * through normal application operations.
  */
 function preventLedgerModification() {
     throw new Error(
@@ -76,16 +98,44 @@ function preventLedgerModification() {
     )
 }
 
-ledgerSchema.pre("findOneAndUpdate", preventLedgerModification)
-ledgerSchema.pre("updateOne", preventLedgerModification)
-ledgerSchema.pre("updateMany", preventLedgerModification)
+ledgerSchema.pre(
+    "findOneAndUpdate",
+    preventLedgerModification
+)
 
-ledgerSchema.pre("deleteOne", preventLedgerModification)
-ledgerSchema.pre("deleteMany", preventLedgerModification)
+ledgerSchema.pre(
+    "updateOne",
+    preventLedgerModification
+)
 
-ledgerSchema.pre("findOneAndDelete", preventLedgerModification)
-ledgerSchema.pre("findOneAndReplace", preventLedgerModification)
+ledgerSchema.pre(
+    "updateMany",
+    preventLedgerModification
+)
 
-const ledgerModel = mongoose.model("ledger", ledgerSchema)
+ledgerSchema.pre(
+    "findOneAndDelete",
+    preventLedgerModification
+)
+
+ledgerSchema.pre(
+    "deleteOne",
+    preventLedgerModification
+)
+
+ledgerSchema.pre(
+    "deleteMany",
+    preventLedgerModification
+)
+
+ledgerSchema.pre(
+    "findOneAndReplace",
+    preventLedgerModification
+)
+
+const ledgerModel = mongoose.model(
+    "ledger",
+    ledgerSchema
+)
 
 module.exports = ledgerModel
