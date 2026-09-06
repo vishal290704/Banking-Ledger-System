@@ -1,74 +1,362 @@
-const transactionService = require("../services/transaction.service")
+const mongoose = require("mongoose");
 
-async function createTransaction(req, res, next) {
-    try {
-        const {
-            fromAccount,
-            toAccount,
-            amount,
-            idempotencyKey
-        } = req.body
+const transactionModel = require("../models/transaction.model");
+const ledgerModel = require("../models/ledger.model");
+const accountModel = require("../models/account.model");
 
-        if (
-            !fromAccount ||
-            !toAccount ||
-            amount === undefined ||
-            amount === null ||
-            !idempotencyKey
-        ) {
-            return res.status(400).json({
-                message:
-                    "fromAccount, toAccount, amount and idempotencyKey are required"
-            })
-        }
+const AppError = require("../errors/AppError");
 
-        const result =
-            await transactionService.createTransfer({
-                user: req.user,
-                fromAccountId:
-                    fromAccount,
-                toAccountId:
-                    toAccount,
-                amount,
-                idempotencyKey
-            })
+/**
+ * Convert INR into paise.
+ *
+ * Examples:
+ * 100      -> 10000
+ * 100.50   -> 10050
+ * 999.99   -> 99999
+ */
+function parseAmountToMinorUnits(amount) {
+  if (amount === undefined || amount === null || amount === "") {
+    throw new AppError("Transaction amount is required", 400, "INVALID_AMOUNT");
+  }
 
-        return res
-            .status(
-                result.alreadyProcessed
-                    ? 200
-                    : 201
-            )
-            .json({
-                message:
-                    result.alreadyProcessed
-                        ? "Transaction already processed"
-                        : "Transaction processed successfully",
+  if (typeof amount !== "number" && typeof amount !== "string") {
+    throw new AppError(
+      "Transaction amount must be a number",
+      400,
+      "INVALID_AMOUNT",
+    );
+  }
 
-                transaction:
-                    result.transaction
-            })
-    } catch (error) {
-        return next(error)
-    }
+  const numericAmount = Number(amount);
+
+  if (!Number.isFinite(numericAmount)) {
+    throw new AppError(
+      "Transaction amount must be a valid number",
+      400,
+      "INVALID_AMOUNT",
+    );
+  }
+
+  if (numericAmount <= 0) {
+    throw new AppError(
+      "Transaction amount must be greater than zero",
+      400,
+      "INVALID_AMOUNT",
+    );
+  }
+
+  const amountMinor = Math.round((numericAmount + Number.EPSILON) * 100);
+
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+    throw new AppError(
+      "Transaction amount is outside the supported range",
+      400,
+      "INVALID_AMOUNT",
+    );
+  }
+
+  const roundedAmount = amountMinor / 100;
+
+  if (Math.abs(numericAmount - roundedAmount) > Number.EPSILON) {
+    throw new AppError(
+      "Transaction amount can have at most two decimal places",
+      400,
+      "INVALID_AMOUNT",
+    );
+  }
+
+  return amountMinor;
 }
 
-async function createInitialFundsTransaction(
-    req,
-    res,
-    next
-) {
+/**
+ * Validate the idempotency key.
+ */
+function normalizeIdempotencyKey(idempotencyKey) {
+  if (typeof idempotencyKey !== "string") {
+    throw new AppError(
+      "Idempotency key must be a string",
+      400,
+      "INVALID_IDEMPOTENCY_KEY",
+    );
+  }
+
+  const key = idempotencyKey.trim();
+
+  if (key.length < 8 || key.length > 128) {
+    throw new AppError(
+      "Idempotency key must contain between 8 and 128 characters",
+      400,
+      "INVALID_IDEMPOTENCY_KEY",
+    );
+  }
+
+  return key;
+}
+
+/**
+ * Create an account-to-account transfer.
+ *
+ * All financial mutations occur inside one MongoDB transaction.
+ */
+async function createTransfer({
+  user,
+  fromAccountId,
+  toAccountId,
+  amount,
+  idempotencyKey,
+}) {
+  if (!user?._id) {
+    throw new AppError("Authentication is required", 401, "UNAUTHORIZED");
+  }
+
+  if (
+    !mongoose.isValidObjectId(fromAccountId) ||
+    !mongoose.isValidObjectId(toAccountId)
+  ) {
+    throw new AppError(
+      "Invalid source or destination account ID",
+      400,
+      "INVALID_ACCOUNT_ID",
+    );
+  }
+
+  if (String(fromAccountId) === String(toAccountId)) {
+    throw new AppError(
+      "Source and destination accounts must be different",
+      400,
+      "SELF_TRANSFER_NOT_ALLOWED",
+    );
+  }
+
+  const amountMinor = parseAmountToMinorUnits(amount);
+
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+  /*
+   * Fast path for already-completed/retried requests.
+   *
+   * The unique database index remains the final protection
+   * against concurrent duplicate requests.
+   */
+  const existingTransaction = await transactionModel.findOne({
+    idempotencyKey: normalizedIdempotencyKey,
+  });
+
+  if (existingTransaction) {
+    return {
+      transaction: existingTransaction,
+      alreadyProcessed: true,
+    };
+  }
+
+  /*
+   * Load accounts for early validation.
+   */
+  const [fromAccount, toAccount] = await Promise.all([
+    accountModel.findById(fromAccountId),
+    accountModel.findById(toAccountId),
+  ]);
+
+  if (!fromAccount || !toAccount) {
+    throw new AppError(
+      "Invalid source or destination account",
+      404,
+      "ACCOUNT_NOT_FOUND",
+    );
+  }
+
+  /*
+   * Only the owner of the source account can transfer from it.
+   */
+  if (String(fromAccount.user) !== String(user._id)) {
+    throw new AppError(
+      "You are not authorized to transfer from this account",
+      403,
+      "ACCOUNT_ACCESS_DENIED",
+    );
+  }
+
+  if (fromAccount.status !== "ACTIVE" || toAccount.status !== "ACTIVE") {
+    throw new AppError(
+      "Both accounts must be ACTIVE",
+      400,
+      "ACCOUNT_NOT_ACTIVE",
+    );
+  }
+
+  /*
+   * V1 supports INR only.
+   */
+  if (fromAccount.currency !== "INR" || toAccount.currency !== "INR") {
+    throw new AppError(
+      "Only INR accounts are supported",
+      400,
+      "UNSUPPORTED_CURRENCY",
+    );
+  }
+
+  if (fromAccount.currency !== toAccount.currency) {
+    throw new AppError(
+      "Source and destination accounts must use the same currency",
+      400,
+      "CURRENCY_MISMATCH",
+    );
+  }
+
+  let session;
+
+  try {
+    session = await mongoose.startSession();
+
+    session.startTransaction();
+
+    let transaction;
+
+    try {
+      transaction = (
+        await transactionModel.create(
+          [
+            {
+              fromAccount: fromAccountId,
+              toAccount: toAccountId,
+              amountMinor,
+              currency: "INR",
+              idempotencyKey: normalizedIdempotencyKey,
+              status: "PENDING",
+            },
+          ],
+          { session },
+        )
+      )[0];
+    } catch (error) {
+      /*
+       * Concurrent request with the same idempotency key.
+       */
+      if (error?.code === 11000) {
+        await session.abortTransaction();
+
+        const duplicate = await transactionModel.findOne({
+          idempotencyKey: normalizedIdempotencyKey,
+        });
+
+        if (duplicate) {
+          return {
+            transaction: duplicate,
+            alreadyProcessed: true,
+          };
+        }
+      }
+
+      throw error;
+    }
+
     /*
-     * We will implement this after we establish
-     * the System Account model and its invariants.
+     * CRITICAL:
+     *
+     * Balance validation and deduction happen in ONE
+     * conditional database operation.
+     *
+     * This protects against concurrent overspending.
      */
-    return res.status(501).json({
-        message:
-            "Initial funds workflow will be implemented in the next milestone"
-    })
+    const debitedAccount = await accountModel.findOneAndUpdate(
+      {
+        _id: fromAccountId,
+        status: "ACTIVE",
+        currency: "INR",
+        balanceMinor: {
+          $gte: amountMinor,
+        },
+      },
+      {
+        $inc: {
+          balanceMinor: -amountMinor,
+        },
+      },
+      {
+        session,
+        returnDocument: "after",
+      },
+    );
+
+    if (!debitedAccount) {
+      throw new AppError("Insufficient balance", 400, "INSUFFICIENT_FUNDS");
+    }
+
+    /*
+     * Credit destination account.
+     */
+    const creditedAccount = await accountModel.findOneAndUpdate(
+      {
+        _id: toAccountId,
+        status: "ACTIVE",
+        currency: "INR",
+      },
+      {
+        $inc: {
+          balanceMinor: amountMinor,
+        },
+      },
+      {
+        session,
+        returnDocument: "after",
+      },
+    );
+
+    if (!creditedAccount) {
+      throw new AppError(
+        "Destination account is not active",
+        400,
+        "DESTINATION_ACCOUNT_UNAVAILABLE",
+      );
+    }
+
+    /*
+     * Double-entry bookkeeping:
+     *
+     * Source      -> DEBIT
+     * Destination -> CREDIT
+     */
+    await ledgerModel.create(
+      [
+        {
+          account: fromAccountId,
+          transaction: transaction._id,
+          amountMinor,
+          type: "DEBIT",
+        },
+        {
+          account: toAccountId,
+          transaction: transaction._id,
+          amountMinor,
+          type: "CREDIT",
+        },
+      ],
+      { session, ordered: true },
+    );
+
+    transaction.status = "COMPLETED";
+
+    await transaction.save({ session });
+
+    await session.commitTransaction();
+
+    return {
+      transaction,
+      alreadyProcessed: false,
+    };
+  } catch (error) {
+    if (session?.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    throw error;
+  } finally {
+    await session?.endSession();
+  }
 }
 
 module.exports = {
-    createTransaction,
-    createInitialFundsTransaction
-}
+  createTransfer,
+  parseAmountToMinorUnits,
+  normalizeIdempotencyKey,
+};
