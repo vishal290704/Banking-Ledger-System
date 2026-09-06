@@ -84,6 +84,20 @@ accountSchema.methods.getBalance = function () {
 }
 
 /*
+ * Check whether this account belongs to the system user.
+ *
+ * The user document is populated only when this helper is used.
+ */
+accountSchema.methods.isSystemAccount = async function () {
+    await this.populate({
+        path: "user",
+        select: "+systemUser"
+    })
+
+    return this.user?.systemUser === true
+}
+
+/*
  * Calculate the balance from the immutable ledger.
  *
  * This is intended for reconciliation/audit purposes,

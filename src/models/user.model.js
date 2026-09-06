@@ -34,6 +34,12 @@ const userSchema = new mongoose.Schema(
             select: false
         },
 
+        /*
+         * Identifies the internal system user.
+         *
+         * This is immutable so a normal user cannot later
+         * be converted into a system user.
+         */
         systemUser: {
             type: Boolean,
             default: false,
@@ -41,12 +47,17 @@ const userSchema = new mongoose.Schema(
             select: false
         }
     },
-
     {
         timestamps: true
     }
 )
 
+/*
+ * Hash the password before saving.
+ *
+ * Async middleware returns normally on success and throws
+ * automatically if hashing fails.
+ */
 userSchema.pre("save", async function () {
     if (!this.isModified("password")) {
         return
@@ -55,6 +66,9 @@ userSchema.pre("save", async function () {
     this.password = await bcrypt.hash(this.password, 12)
 })
 
+/*
+ * Compare a plain-text password with the stored hash.
+ */
 userSchema.methods.comparePassword = function (password) {
     return bcrypt.compare(password, this.password)
 }
