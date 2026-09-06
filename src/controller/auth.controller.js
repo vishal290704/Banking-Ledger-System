@@ -1,92 +1,280 @@
-const { model } = require("mongoose")
 const userModel = require("../models/user.model")
 const jwt = require("jsonwebtoken")
-const emailService= require("../services/email.service")
-const tokenBlackListModel = require("../models/blackList.model") 
+const emailService = require("../services/email.service")
+const tokenBlackListModel = require("../models/blackList.model")
 
-//api for register
-// -User register controller
-// -POST /api/auth/register
-async function userRegisterController(req, res){
-    const {email, password, name} = req.body
-    const isExists = await userModel.findOne({
-        email:email
-    })
-
-    if(isExists){
-        return res.status(422).json({
-            message:"User already exists with email",
-            status:"failed"
-        })
-    }
-    const user = await userModel.create({
-        email, password, name 
-    })
-
-    const token = jwt.sign({userId:user._id}, process.env.JWT_SECRET,{expiresIn:"3d"})
-    res.cookie("token", token)
-    res.status(201).json({
-        user:{
-            _id:user._id,
-            email:user.email,
-            name:user.name
+/**
+ * Create JWT for an authenticated user.
+ */
+function generateAccessToken(userId) {
+    return jwt.sign(
+        {
+            userId
         },
-        token
-    })
-    await emailService.sendRegistrationEmail(user.email, user.name)
-
-}
-
-
-// -User Login controller
-// -POST /api/auth/login
-async function userLoginController(req, res) {
-    const {email, password} = req.body
-    const user = await userModel.findOne({email}).select("+password")
-
-    if(!user){
-        return req.status(401).json({
-            message:"Email or Password is INVALID"
-        })
-    }
-    const isValidPassword = await user.comparePassword(password)
-    if(!isValidPassword){
-         return req.status(401).json({
-            message:"Email or Password is INVALID"
-        })
-    }
-        const token = jwt.sign({userId:user._id}, process.env.JWT_SECRET,{expiresIn:"3d"})
-    res.cookie("token", token)
-    res.status(200).json({
-        user:{
-            _id:user._id,
-            email:user.email,
-            name:user.name
-        },
-        token
-    })
-
+        process.env.JWT_SECRET,
+        {
+            expiresIn: process.env.JWT_EXPIRES_IN || "3d"
+        }
+    )
 }
 
 /**
- * -User logout controller
- * -POST /api/auth/logout
+ * Common cookie configuration.
  */
-async function userLogoutController(req, res){
-    const token = req.cookies.token || req.headers.authorization?.split(" ")[1]
-    if(!token){
-        return res.status(401).json({
-            message:"User logout successfully"
+function setAuthCookie(res, token) {
+    res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 3 * 24 * 60 * 60 * 1000
+    })
+}
+
+/**
+ * POST /api/auth/register
+ */
+async function userRegisterController(req, res, next) {
+    try {
+        const { email, password, name } = req.body
+
+        if (!email || !password || !name) {
+            return res.status(400).json({
+                message: "Name, email and password are required"
+            })
+        }
+
+        const normalizedEmail = String(email)
+            .trim()
+            .toLowerCase()
+
+        const normalizedName = String(name).trim()
+
+        if (normalizedName.length < 2) {
+            return res.status(400).json({
+                message: "Name must contain at least 2 characters"
+            })
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                message: "Password must contain at least 8 characters"
+            })
+        }
+
+        /*
+         * Do not allow systemUser to come from req.body.
+         *
+         * We explicitly select only allowed registration fields.
+         */
+        const isExists = await userModel.findOne({
+            email: normalizedEmail
         })
-    } 
-   
-    await tokenBlackListModel.create({
-        token:token
-    })
-    res.clearCookie("token")
-    res.status(200).json({
-        message:"User logged out successfully"
-    })
+
+        if (isExists) {
+            return res.status(409).json({
+                message: "User already exists with this email",
+                status: "failed"
+            })
+        }
+
+        const user = await userModel.create({
+            email: normalizedEmail,
+            password,
+            name: normalizedName
+        })
+
+        const token = generateAccessToken(user._id)
+
+        setAuthCookie(res, token)
+
+        /*
+         * Return the response first.
+         *
+         * Email delivery should never make user registration fail.
+         */
+        const response = res.status(201).json({
+            message: "User registered successfully",
+            user: {
+                _id: user._id,
+                email: user.email,
+                name: user.name
+            },
+            token
+        })
+
+        /*
+         * Non-critical side effect.
+         */
+        try {
+            await emailService.sendRegistrationEmail(
+                user.email,
+                user.name
+            )
+        } catch (emailError) {
+            console.error(
+                "Registration email failed:",
+                emailError
+            )
+        }
+
+        return response
+    } catch (error) {
+        /*
+         * Handle MongoDB duplicate-key race condition.
+         */
+        if (error?.code === 11000) {
+            return res.status(409).json({
+                message: "User already exists with this email"
+            })
+        }
+
+        return next(error)
+    }
+}
+
+/**
+ * POST /api/auth/login
+ */
+async function userLoginController(req, res, next) {
+    try {
+        const { email, password } = req.body
+
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "Email and password are required"
+            })
+        }
+
+        const normalizedEmail = String(email)
+            .trim()
+            .toLowerCase()
+
+        /*
+         * password has select:false in the schema,
+         * so it must be explicitly selected.
+         */
+        const user = await userModel
+            .findOne({
+                email: normalizedEmail
+            })
+            .select("+password")
+
+        if (!user) {
+            return res.status(401).json({
+                message: "Email or password is invalid"
+            })
+        }
+
+        const isValidPassword =
+            await user.comparePassword(password)
+
+        if (!isValidPassword) {
+            return res.status(401).json({
+                message: "Email or password is invalid"
+            })
+        }
+
+        const token = generateAccessToken(user._id)
+
+        setAuthCookie(res, token)
+
+        return res.status(200).json({
+            message: "Login successful",
+            user: {
+                _id: user._id,
+                email: user.email,
+                name: user.name
+            },
+            token
+        })
+    } catch (error) {
+        return next(error)
+    }
+}
+
+/**
+ * POST /api/auth/logout
+ */
+async function userLogoutController(req, res, next) {
+    try {
+        /*
+         * Use the same extraction logic as authentication.
+         */
+        const token =
+            req.cookies?.token ||
+            req.headers.authorization?.startsWith("Bearer ")
+                ? req.headers.authorization.split(" ")[1]
+                : req.cookies?.token
+
+        /*
+         * Logout should be idempotent.
+         *
+         * Even if there is no token, the user is effectively logged out.
+         */
+        if (!token) {
+            res.clearCookie("token")
+
+            return res.status(200).json({
+                message: "User logged out successfully"
+            })
+        }
+
+        /*
+         * Decode token only to determine its expiry.
+         *
+         * We do not trust decoded contents for authentication.
+         */
+        let decoded
+
+        try {
+            decoded = jwt.verify(
+                token,
+                process.env.JWT_SECRET
+            )
+        } catch (error) {
+            /*
+             * Even an expired/invalid token should result in
+             * the browser cookie being removed.
+             */
+            res.clearCookie("token")
+
+            return res.status(200).json({
+                message: "User logged out successfully"
+            })
+        }
+
+        /*
+         * Token expiration should eventually control how long
+         * the blacklist record needs to exist.
+         */
+        const expiresAt = decoded.exp
+            ? new Date(decoded.exp * 1000)
+            : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+
+        /*
+         * Avoid duplicate blacklist entries.
+         *
+         * The blacklist model should have a unique token index.
+         */
+        try {
+            await tokenBlackListModel.create({
+                token,
+                expiresAt
+            })
+        } catch (error) {
+            if (error?.code !== 11000) {
+                throw error
+            }
+        }
+
+        res.clearCookie("token")
+
+        return res.status(200).json({
+            message: "User logged out successfully"
+        })
+    } catch (error) {
+        return next(error)
+    }
 }
 
 module.exports = {
