@@ -22,6 +22,9 @@ const accountSchema = new mongoose.Schema(
             index: true
         },
 
+        /*
+         * V1 supports INR only.
+         */
         currency: {
             type: String,
             enum: {
@@ -41,7 +44,8 @@ const accountSchema = new mongoose.Schema(
          * ₹1      -> 100
          * ₹100.50 -> 10050
          *
-         * This avoids floating-point money calculations.
+         * balanceMinor is the current materialized balance.
+         * The immutable ledger remains the audit trail.
          */
         balanceMinor: {
             type: Number,
@@ -60,7 +64,7 @@ const accountSchema = new mongoose.Schema(
 )
 
 /*
- * Useful for user account listing and lookup.
+ * Useful for listing and querying user accounts.
  */
 accountSchema.index({
     user: 1,
@@ -73,17 +77,17 @@ accountSchema.index({
 })
 
 /*
- * Fast current balance.
+ * Return the current materialized balance.
  */
 accountSchema.methods.getBalance = function () {
     return this.balanceMinor
 }
 
 /*
- * Recalculate the balance from the immutable ledger.
+ * Calculate the balance from the immutable ledger.
  *
- * This is NOT used for every transaction.
- * It is intended for reconciliation/audit checks.
+ * This is intended for reconciliation/audit purposes,
+ * not for every transaction.
  */
 accountSchema.methods.getLedgerBalance = async function (
     session = null
@@ -122,6 +126,7 @@ accountSchema.methods.getLedgerBalance = async function (
         {
             $project: {
                 _id: 0,
+
                 balanceMinor: {
                     $subtract: [
                         "$totalCredit",

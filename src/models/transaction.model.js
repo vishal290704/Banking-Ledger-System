@@ -41,9 +41,11 @@ const transactionSchema = new mongoose.Schema(
         },
 
         /*
+         * V1 supports INR only.
+         *
          * Amount is stored in paise.
          *
-         * ₹500.25 => 50025
+         * ₹500.25 -> 50025
          */
         amountMinor: {
             type: Number,
@@ -63,9 +65,6 @@ const transactionSchema = new mongoose.Schema(
             immutable: true
         },
 
-        /*
-         * V1 supports INR only.
-         */
         currency: {
             type: String,
             enum: {
@@ -80,7 +79,8 @@ const transactionSchema = new mongoose.Schema(
         },
 
         /*
-         * Prevent duplicate processing when clients retry requests.
+         * Prevent duplicate processing when a client retries
+         * the same request.
          */
         idempotencyKey: {
             type: String,
@@ -91,7 +91,10 @@ const transactionSchema = new mongoose.Schema(
             unique: true,
             index: true,
             trim: true,
-            minlength: [8, "Idempotency key is too short"],
+            minlength: [
+                8,
+                "Idempotency key is too short"
+            ],
             maxlength: [
                 128,
                 "Idempotency key is too long"
@@ -104,6 +107,9 @@ const transactionSchema = new mongoose.Schema(
     }
 )
 
+/*
+ * Transaction history lookup indexes.
+ */
 transactionSchema.index({
     fromAccount: 1,
     createdAt: -1

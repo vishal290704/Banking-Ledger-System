@@ -14,7 +14,9 @@ const ledgerSchema = new mongoose.Schema(
         },
 
         /*
-         * Amount stored in paise.
+         * Monetary values are stored in paise.
+         *
+         * ₹500.25 -> 50025
          */
         amountMinor: {
             type: Number,
@@ -52,7 +54,10 @@ const ledgerSchema = new mongoose.Schema(
                 message:
                     "Type can only be CREDIT or DEBIT"
             },
-            required: true,
+            required: [
+                true,
+                "Ledger type is required"
+            ],
             immutable: true,
             index: true
         }
@@ -63,17 +68,13 @@ const ledgerSchema = new mongoose.Schema(
 )
 
 /*
- * For a normal transfer:
+ * Prevent duplicate financial postings for the same
+ * transaction/account/type combination.
  *
- * Transaction X
- * Account A
- * DEBIT
+ * A normal transfer should produce:
  *
- * Transaction X
- * Account B
- * CREDIT
- *
- * There cannot be a second identical posting.
+ *   Source Account → DEBIT
+ *   Destination    → CREDIT
  */
 ledgerSchema.index(
     {
@@ -87,7 +88,7 @@ ledgerSchema.index(
 )
 
 /*
- * Ledger is append-only.
+ * Ledger entries are append-only.
  *
  * Financial history must not be modified or deleted
  * through normal application operations.

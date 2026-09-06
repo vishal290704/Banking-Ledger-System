@@ -15,7 +15,7 @@ const tokenBlackListSchema = new mongoose.Schema(
         /*
          * Exact JWT expiration time.
          *
-         * MongoDB TTL will automatically remove the
+         * MongoDB TTL index automatically removes the
          * blacklist document after this time.
          */
         expiresAt: {
@@ -32,9 +32,10 @@ const tokenBlackListSchema = new mongoose.Schema(
 )
 
 /*
- * expireAfterSeconds = 0 means:
+ * Automatically remove expired blacklist entries.
  *
- * delete when expiresAt <= current time
+ * expireAfterSeconds: 0 means MongoDB removes the
+ * document when expiresAt <= current time.
  */
 tokenBlackListSchema.index(
     {
