@@ -9,11 +9,38 @@ async function startServer() {
 
         const PORT = process.env.PORT || 3000
 
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`Server started on port ${PORT}`)
         })
+
+        /*
+         * Graceful shutdown
+         */
+        const shutdown = async (signal) => {
+            console.log(`${signal} received. Shutting down...`)
+
+            server.close(async () => {
+                const mongoose = require("mongoose")
+
+                try {
+                    await mongoose.connection.close()
+                    console.log("MongoDB connection closed")
+                    process.exit(0)
+                } catch (error) {
+                    console.error(
+                        "Error closing MongoDB connection:",
+                        error
+                    )
+
+                    process.exit(1)
+                }
+            })
+        }
+
+        process.on("SIGINT", () => shutdown("SIGINT"))
+        process.on("SIGTERM", () => shutdown("SIGTERM"))
     } catch (error) {
-        console.error("Failed to start server:", error)
+        console.error("Unable to start application:", error)
         process.exit(1)
     }
 }

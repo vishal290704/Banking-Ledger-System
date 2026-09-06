@@ -1,136 +1,279 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer")
 
+/*
+ * Create the SMTP/OAuth2 transporter.
+ *
+ * We intentionally do not call transporter.verify() here.
+ * Importing this module should not trigger an external network call.
+ */
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    type: 'OAuth2',
-    user: process.env.EMAIL_USER,
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    refreshToken: process.env.REFRESH_TOKEN,
-  },
-});
+    service: "gmail",
 
-// Verify the connection configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('Error connecting to email server:', error);
-  } else {
-    console.log('Email server is ready to send messages');
-  }
-});
+    auth: {
+        type: "OAuth2",
+        user: process.env.EMAIL_USER,
+        clientId: process.env.CLIENT_ID,
+        clientSecret: process.env.CLIENT_SECRET,
+        refreshToken: process.env.REFRESH_TOKEN
+    }
+})
 
-// Function to send email
-const sendEmail = async (to, subject, text, html) => {
-  try {
-    const info = await transporter.sendMail({
-      from: `"Banking Ledger" <${process.env.EMAIL_USER}>`, // sender address
-      to, // list of receivers
-      subject, // Subject line
-      text, // plain text body
-      html, // html body
-    });
-
-    console.log('Message sent: %s', info.messageId);
-    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
-  } catch (error) {
-    console.error('Error sending email:', error);
-  }
-};
-
-async function sendRegistrationEmail(userEmail, name){
-    const subject = "Welcome to Banking ledger"
-    const text = `Hello ${name}, \n\n Thank You for registartion at Banking-Transaction-System.
-    We're excited to have you on board!\n\nBest Regards,\nThe Banking Ledger System team.
-    `;
-    const html = `<p>Helllo ${name}, </p><p>Thank You for registartion at Banking-Transaction-System. 
-    We're excited to have you on board!</p><p>Best Regards,<br> The Banking Ledger System Team</p>`;
-    
-    await sendEmail(userEmail, subject, text, html);
+/**
+ * Verify email transporter configuration/connectivity.
+ *
+ * This can be called explicitly during application startup or
+ * as a health/readiness check.
+ */
+async function verifyEmailService() {
+    await transporter.verify()
+    return true
 }
 
-async function sendTransactionEmail(userEmail, name, amount, toAccount) {
-    const subject = "Transaction Successful";
+/**
+ * Generic email sender.
+ *
+ * IMPORTANT:
+ * Errors are re-thrown.
+ * The caller decides whether an email failure should affect
+ * the surrounding business operation.
+ */
+async function sendEmail(to, subject, text, html) {
+    if (!to) {
+        throw new Error("Recipient email address is required")
+    }
+
+    if (!process.env.EMAIL_USER) {
+        throw new Error("EMAIL_USER is not configured")
+    }
+
+    const info = await transporter.sendMail({
+        from: `"Banking Ledger" <${process.env.EMAIL_USER}>`,
+        to,
+        subject,
+        text,
+        html
+    })
+
+    console.log(
+        `Email sent successfully. messageId=${info.messageId}`
+    )
+
+    return info
+}
+
+/**
+ * Registration email.
+ */
+async function sendRegistrationEmail(userEmail, name) {
+    const subject = "Welcome to Banking Ledger"
+
+    const text = `Hello ${name},
+
+Thank you for registering with Banking Ledger.
+
+We're excited to have you on board!
+
+Best Regards,
+The Banking Ledger Team
+`
+
+    const html = `
+        <h2>Welcome to Banking Ledger</h2>
+
+        <p>Hello ${name},</p>
+
+        <p>
+            Thank you for registering with Banking Ledger.
+            We're excited to have you on board!
+        </p>
+
+        <p>
+            Best Regards,<br>
+            The Banking Ledger Team
+        </p>
+    `
+
+    return sendEmail(
+        userEmail,
+        subject,
+        text,
+        html
+    )
+}
+
+/**
+ * Successful transaction email.
+ */
+async function sendTransactionEmail({
+    userEmail,
+    name,
+    amount,
+    currency = "INR",
+    toAccount,
+    transactionId,
+    timestamp = new Date()
+}) {
+    const subject = "Transaction Successful"
+
+    const formattedTimestamp =
+        new Date(timestamp).toISOString()
 
     const text = `Hello ${name},
 
 Your transaction has been completed successfully.
 
-Amount: ₹${amount}
+Transaction ID: ${transactionId}
+Amount: ${currency} ${amount}
 Transferred To: ${toAccount}
+Time: ${formattedTimestamp}
 
 Thank you for using Banking Ledger.
 
 Best Regards,
-The Banking Ledger Team`;
+The Banking Ledger Team
+`
 
     const html = `
-    <h2>Transaction Successful</h2>
-    <p>Hello ${name},</p>
-    <p>Your transaction has been completed successfully.</p>
+        <h2>Transaction Successful</h2>
 
-    <ul>
-        <li><strong>Amount:</strong> ₹${amount}</li>
-        <li><strong>Transferred To:</strong> ${toAccount}</li>
-    </ul>
+        <p>Hello ${name},</p>
 
-    <p>Thank you for using Banking Ledger.</p>
+        <p>
+            Your transaction has been completed successfully.
+        </p>
 
-    <p>
-        Best Regards,<br>
-        The Banking Ledger Team
-    </p>
-    `;
+        <ul>
+            <li>
+                <strong>Transaction ID:</strong>
+                ${transactionId}
+            </li>
 
-    await sendEmail(userEmail, subject, text, html);
+            <li>
+                <strong>Amount:</strong>
+                ${currency} ${amount}
+            </li>
+
+            <li>
+                <strong>Transferred To:</strong>
+                ${toAccount}
+            </li>
+
+            <li>
+                <strong>Time:</strong>
+                ${formattedTimestamp}
+            </li>
+        </ul>
+
+        <p>
+            Thank you for using Banking Ledger.
+        </p>
+
+        <p>
+            Best Regards,<br>
+            The Banking Ledger Team
+        </p>
+    `
+
+    return sendEmail(
+        userEmail,
+        subject,
+        text,
+        html
+    )
 }
 
-async function sendTransactionFailureEmail(
+/**
+ * Failed transaction email.
+ */
+async function sendTransactionFailureEmail({
     userEmail,
     name,
     amount,
-    toAccount
-) {
-    const subject = "Transaction Failed";
+    currency = "INR",
+    toAccount,
+    reason,
+    transactionId,
+    timestamp = new Date()
+}) {
+    const subject = "Transaction Failed"
+
+    const formattedTimestamp =
+        new Date(timestamp).toISOString()
 
     const text = `Hello ${name},
 
 We were unable to process your transaction.
 
-Amount: ₹${amount}
+Transaction ID: ${transactionId}
+Amount: ${currency} ${amount}
 Attempted Transfer To: ${toAccount}
 Reason: ${reason}
+Time: ${formattedTimestamp}
 
 Please verify your account details and try again.
 
 Best Regards,
-The Banking Ledger Team`;
+The Banking Ledger Team
+`
 
     const html = `
-    <h2>Transaction Failed</h2>
+        <h2>Transaction Failed</h2>
 
-    <p>Hello ${name},</p>
+        <p>Hello ${name},</p>
 
-    <p>We were unable to process your transaction.</p>
+        <p>
+            We were unable to process your transaction.
+        </p>
 
-    <ul>
-        <li><strong>Amount:</strong> ₹${amount}</li>
-        <li><strong>Attempted Transfer To:</strong> ${toAccount}</li>
-    </ul>
+        <ul>
+            <li>
+                <strong>Transaction ID:</strong>
+                ${transactionId}
+            </li>
 
-    <p>Please verify your account details and try again.</p>
+            <li>
+                <strong>Amount:</strong>
+                ${currency} ${amount}
+            </li>
 
-    <p>
-        Best Regards,<br>
-        The Banking Ledger Team
-    </p>
-    `;
+            <li>
+                <strong>Attempted Transfer To:</strong>
+                ${toAccount}
+            </li>
 
-    await sendEmail(userEmail, subject, text, html);
+            <li>
+                <strong>Reason:</strong>
+                ${reason}
+            </li>
+
+            <li>
+                <strong>Time:</strong>
+                ${formattedTimestamp}
+            </li>
+        </ul>
+
+        <p>
+            Please verify your account details and try again.
+        </p>
+
+        <p>
+            Best Regards,<br>
+            The Banking Ledger Team
+        </p>
+    `
+
+    return sendEmail(
+        userEmail,
+        subject,
+        text,
+        html
+    )
 }
 
 module.exports = {
+    verifyEmailService,
+    sendEmail,
     sendRegistrationEmail,
     sendTransactionEmail,
     sendTransactionFailureEmail
-};
+}
