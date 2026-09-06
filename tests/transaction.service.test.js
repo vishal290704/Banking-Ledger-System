@@ -273,6 +273,50 @@ describe("Transaction Service", () => {
         expect(destination.balanceMinor).toBe(60000)
     })
 
+    test("should reject reuse of an idempotency key with different transaction details", async () => {
+        await transactionService.createTransfer({
+            user: sourceUser,
+            fromAccountId: sourceAccount._id,
+            toAccountId: destinationAccount._id,
+            amount: 100,
+            idempotencyKey: "reuse-test-001"
+        })
+
+        await expect(
+            transactionService.createTransfer({
+                user: sourceUser,
+                fromAccountId: sourceAccount._id,
+                toAccountId: destinationAccount._id,
+                amount: 500,
+                idempotencyKey: "reuse-test-001"
+            })
+        ).rejects.toMatchObject({
+            code: "IDEMPOTENCY_KEY_REUSED",
+            statusCode: 409
+        })
+
+        const source =
+            await accountModel.findById(
+                sourceAccount._id
+            )
+
+        const destination =
+            await accountModel.findById(
+                destinationAccount._id
+            )
+
+        expect(source.balanceMinor).toBe(90000)
+        expect(destination.balanceMinor).toBe(60000)
+
+        expect(
+            await transactionModel.countDocuments()
+        ).toBe(1)
+
+        expect(
+            await ledgerModel.countDocuments()
+        ).toBe(2)
+    })
+
     test("should correctly handle decimal INR amounts", async () => {
         const result =
             await transactionService.createTransfer({
@@ -359,7 +403,8 @@ describe("Transaction Service", () => {
             await ledgerModel.countDocuments()
         ).toBe(2)
     })
-        test("should process a concurrent request with the same idempotency key only once", async () => {
+
+    test("should process a concurrent request with the same idempotency key only once", async () => {
         const results = await Promise.allSettled([
             transactionService.createTransfer({
                 user: sourceUser,
