@@ -24,6 +24,31 @@ const transactionSchema = new mongoose.Schema(
             immutable: true
         },
 
+        /*
+         * Defines the business purpose of the transaction.
+         *
+         * TRANSFER:
+         * Normal account-to-account customer transfer.
+         *
+         * INITIAL_FUNDING:
+         * System-originated funding of a customer account.
+         */
+        type: {
+            type: String,
+            enum: {
+                values: [
+                    "TRANSFER",
+                    "INITIAL_FUNDING"
+                ],
+                message:
+                    "Type can be TRANSFER or INITIAL_FUNDING"
+            },
+            default: "TRANSFER",
+            required: true,
+            immutable: true,
+            index: true
+        },
+
         status: {
             type: String,
             enum: {
@@ -117,6 +142,15 @@ transactionSchema.index({
 
 transactionSchema.index({
     toAccount: 1,
+    createdAt: -1
+})
+
+/*
+ * Useful for auditing and filtering transactions
+ * by their business purpose.
+ */
+transactionSchema.index({
+    type: 1,
     createdAt: -1
 })
 
