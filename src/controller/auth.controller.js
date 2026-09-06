@@ -197,20 +197,17 @@ async function userLoginController(req, res, next) {
  */
 async function userLogoutController(req, res, next) {
     try {
-        /*
-         * Use the same extraction logic as authentication.
-         */
-        const token =
-            req.cookies?.token ||
-            req.headers.authorization?.startsWith("Bearer ")
-                ? req.headers.authorization.split(" ")[1]
-                : req.cookies?.token
+        const cookieToken = req.cookies?.token
+        const authorizationHeader = req.headers.authorization
 
-        /*
-         * Logout should be idempotent.
-         *
-         * Even if there is no token, the user is effectively logged out.
-         */
+        let headerToken = null
+
+        if (authorizationHeader?.startsWith("Bearer ")) {
+            headerToken = authorizationHeader.substring(7)
+        }
+
+        const token = cookieToken || headerToken
+
         if (!token) {
             res.clearCookie("token")
 
@@ -219,11 +216,6 @@ async function userLogoutController(req, res, next) {
             })
         }
 
-        /*
-         * Decode token only to determine its expiry.
-         *
-         * We do not trust decoded contents for authentication.
-         */
         let decoded
 
         try {
@@ -232,10 +224,6 @@ async function userLogoutController(req, res, next) {
                 process.env.JWT_SECRET
             )
         } catch (error) {
-            /*
-             * Even an expired/invalid token should result in
-             * the browser cookie being removed.
-             */
             res.clearCookie("token")
 
             return res.status(200).json({
@@ -243,19 +231,13 @@ async function userLogoutController(req, res, next) {
             })
         }
 
-        /*
-         * Token expiration should eventually control how long
-         * the blacklist record needs to exist.
-         */
         const expiresAt = decoded.exp
             ? new Date(decoded.exp * 1000)
-            : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+            : new Date(
+                  Date.now() +
+                  3 * 24 * 60 * 60 * 1000
+              )
 
-        /*
-         * Avoid duplicate blacklist entries.
-         *
-         * The blacklist model should have a unique token index.
-         */
         try {
             await tokenBlackListModel.create({
                 token,
@@ -276,7 +258,6 @@ async function userLogoutController(req, res, next) {
         return next(error)
     }
 }
-
 module.exports = {
     userRegisterController,
     userLoginController,
