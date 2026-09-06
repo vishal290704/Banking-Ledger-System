@@ -2,17 +2,31 @@ const mongoose = require("mongoose")
 
 const transactionSchema = new mongoose.Schema(
     {
+        /*
+         * Source account.
+         *
+         * Required for:
+         * - TRANSFER
+         * - INITIAL_FUNDING
+         *
+         * Not required for:
+         * - BOOTSTRAP_FUNDING
+         *
+         * A bootstrap funding operation represents money entering
+         * the system from an external source.
+         */
         fromAccount: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "account",
-            required: [
-                true,
-                "Transaction must be associated with a source account"
-            ],
             index: true,
             immutable: true
         },
 
+        /*
+         * Destination account.
+         *
+         * Every transaction must have a destination account.
+         */
         toAccount: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "account",
@@ -32,16 +46,20 @@ const transactionSchema = new mongoose.Schema(
          *
          * INITIAL_FUNDING:
          * System-originated funding of a customer account.
+         *
+         * BOOTSTRAP_FUNDING:
+         * External funding entering the system account.
          */
         type: {
             type: String,
             enum: {
                 values: [
                     "TRANSFER",
-                    "INITIAL_FUNDING"
+                    "INITIAL_FUNDING",
+                    "BOOTSTRAP_FUNDING"
                 ],
                 message:
-                    "Type can be TRANSFER or INITIAL_FUNDING"
+                    "Type can be TRANSFER, INITIAL_FUNDING or BOOTSTRAP_FUNDING"
             },
             default: "TRANSFER",
             required: true,
@@ -131,6 +149,60 @@ const transactionSchema = new mongoose.Schema(
         timestamps: true
     }
 )
+
+/*
+ * Validate account relationships based on transaction type.
+ *
+ * TRANSFER:
+ *     fromAccount -> required
+ *     toAccount   -> required
+ *
+ * INITIAL_FUNDING:
+ *     fromAccount -> required
+ *     toAccount   -> required
+ *
+ * BOOTSTRAP_FUNDING:
+ *     fromAccount -> must be absent
+ *     toAccount   -> required
+ */
+transactionSchema.pre("validate", function () {
+    if (
+        this.type === "TRANSFER" ||
+        this.type === "INITIAL_FUNDING"
+    ) {
+        if (!this.fromAccount) {
+            this.invalidate(
+                "fromAccount",
+                `${this.type} transaction requires a source account`
+            )
+        }
+
+        if (!this.toAccount) {
+            this.invalidate(
+                "toAccount",
+                `${this.type} transaction requires a destination account`
+            )
+        }
+
+        return
+    }
+
+    if (this.type === "BOOTSTRAP_FUNDING") {
+        if (this.fromAccount) {
+            this.invalidate(
+                "fromAccount",
+                "BOOTSTRAP_FUNDING transaction cannot have a source account"
+            )
+        }
+
+        if (!this.toAccount) {
+            this.invalidate(
+                "toAccount",
+                "BOOTSTRAP_FUNDING transaction requires a destination account"
+            )
+        }
+    }
+})
 
 /*
  * Transaction history lookup indexes.
