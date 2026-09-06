@@ -1,4 +1,5 @@
 const transactionService = require("../services/transaction.service")
+const fundingService = require("../services/funding.service")
 
 async function createTransaction(req, res, next) {
     try {
@@ -25,10 +26,8 @@ async function createTransaction(req, res, next) {
         const result =
             await transactionService.createTransfer({
                 user: req.user,
-                fromAccountId:
-                    fromAccount,
-                toAccountId:
-                    toAccount,
+                fromAccountId: fromAccount,
+                toAccountId: toAccount,
                 amount,
                 idempotencyKey
             })
@@ -44,7 +43,6 @@ async function createTransaction(req, res, next) {
                     result.alreadyProcessed
                         ? "Transaction already processed"
                         : "Transaction processed successfully",
-
                 transaction:
                     result.transaction
             })
@@ -58,14 +56,50 @@ async function createInitialFundsTransaction(
     res,
     next
 ) {
-    /*
-     * We will implement this after we establish
-     * the System Account model and its invariants.
-     */
-    return res.status(501).json({
-        message:
-            "Initial funds workflow will be implemented in the next milestone"
-    })
+    try {
+        const {
+            customerAccountId,
+            amount,
+            idempotencyKey
+        } = req.body
+
+        if (
+            !customerAccountId ||
+            amount === undefined ||
+            amount === null ||
+            !idempotencyKey
+        ) {
+            return res.status(400).json({
+                message:
+                    "customerAccountId, amount and idempotencyKey are required"
+            })
+        }
+
+        const result =
+            await fundingService.createInitialFunding({
+                user: req.user,
+                customerAccountId,
+                amount,
+                idempotencyKey
+            })
+
+        return res
+            .status(
+                result.alreadyProcessed
+                    ? 200
+                    : 201
+            )
+            .json({
+                message:
+                    result.alreadyProcessed
+                        ? "Initial funding already processed"
+                        : "Initial funding processed successfully",
+                transaction:
+                    result.transaction
+            })
+    } catch (error) {
+        return next(error)
+    }
 }
 
 module.exports = {
