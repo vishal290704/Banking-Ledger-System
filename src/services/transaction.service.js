@@ -409,7 +409,8 @@ async function createTransfer({
       });
     } catch (error) {
       const shouldRetry =
-        isTransientTransactionError(error) && attempt < MAX_TRANSACTION_RETRIES;
+        isTransientTransactionError(error) &&
+        attempt < MAX_TRANSACTION_RETRIES;
 
       if (!shouldRetry) {
         throw error;
@@ -435,8 +436,58 @@ async function createTransfer({
   );
 }
 
+/**
+ * Get transaction history for the authenticated user.
+ *
+ * Returns transactions where one of the user's accounts
+ * is either the source or destination account.
+ */
+async function getUserTransactions(userId) {
+  if (!userId) {
+    throw new AppError(
+      "Authentication is required",
+      401,
+      "UNAUTHORIZED",
+    );
+  }
+
+  const accounts = await accountModel
+    .find({
+      user: userId,
+    })
+    .select("_id");
+
+  const accountIds = accounts.map(
+    (account) => account._id,
+  );
+
+  if (accountIds.length === 0) {
+    return [];
+  }
+
+  return transactionModel
+    .find({
+      $or: [
+        {
+          fromAccount: {
+            $in: accountIds,
+          },
+        },
+        {
+          toAccount: {
+            $in: accountIds,
+          },
+        },
+      ],
+    })
+    .sort({
+      createdAt: -1,
+    });
+}
+
 module.exports = {
   createTransfer,
+  getUserTransactions,
   parseAmountToMinorUnits,
   normalizeIdempotencyKey,
 };

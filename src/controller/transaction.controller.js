@@ -102,7 +102,23 @@ async function createInitialFundsTransaction(
     }
 }
 
+async function getTransactions(req, res, next) {
+    try {
+        const transactions =
+            await transactionService.getUserTransactions(
+                req.user._id
+            )
+
+        return res.status(200).json({
+            transactions
+        })
+    } catch (error) {
+        return next(error)
+    }
+}
+
 module.exports = {
     createTransaction,
-    createInitialFundsTransaction
+    createInitialFundsTransaction,
+    getTransactions
 }

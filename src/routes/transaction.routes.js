@@ -6,6 +6,17 @@ const transactionController = require("../controller/transaction.controller")
 const transactionRoutes = Router()
 
 /**
+ * GET /api/transactions
+ *
+ * Get transaction history for the authenticated user.
+ */
+transactionRoutes.get(
+    "/",
+    authMiddleware.authMiddleware,
+    transactionController.getTransactions
+)
+
+/**
  * POST /api/transactions
  *
  * Create a new account-to-account transaction.
@@ -20,9 +31,6 @@ transactionRoutes.post(
  * POST /api/transactions/system/initial-funds
  *
  * Create initial funds from the system account.
- *
- * Implementation will be added after validating the
- * system-user/account flow.
  */
 transactionRoutes.post(
     "/system/initial-funds",

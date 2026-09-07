@@ -366,4 +366,115 @@ describe("Transaction API", () => {
             await ledgerModel.countDocuments()
         ).toBe(2)
     })
+    test("should return transaction history for the authenticated user", async () => {
+    await request(app)
+        .post("/api/transactions")
+        .set(
+            "Authorization",
+            `Bearer ${sourceToken}`
+        )
+        .send({
+            fromAccount: sourceAccount._id,
+            toAccount: destinationAccount._id,
+            amount: 100,
+            idempotencyKey: "history-test-001"
+        })
+        .expect(201)
+
+    const response =
+        await request(app)
+            .get("/api/transactions")
+            .set(
+                "Authorization",
+                `Bearer ${sourceToken}`
+            )
+
+    expect(response.status).toBe(200)
+
+    expect(response.body.transactions).toHaveLength(1)
+
+    expect(
+        response.body.transactions[0].idempotencyKey
+    ).toBe("history-test-001")
+
+    expect(
+        response.body.transactions[0].amountMinor
+    ).toBe(10000)
+})
+
+test("should return transactions received by the authenticated user", async () => {
+    await request(app)
+        .post("/api/transactions")
+        .set(
+            "Authorization",
+            `Bearer ${sourceToken}`
+        )
+        .send({
+            fromAccount: sourceAccount._id,
+            toAccount: destinationAccount._id,
+            amount: 100,
+            idempotencyKey: "history-test-002"
+        })
+        .expect(201)
+
+    const response =
+        await request(app)
+            .get("/api/transactions")
+            .set(
+                "Authorization",
+                `Bearer ${destinationToken}`
+            )
+
+    expect(response.status).toBe(200)
+
+    expect(response.body.transactions).toHaveLength(1)
+
+    expect(
+        response.body.transactions[0].toAccount
+    ).toBe(
+        destinationAccount._id.toString()
+    )
+
+    expect(
+        response.body.transactions[0].amountMinor
+    ).toBe(10000)
+})
+
+test("should not return transactions unrelated to the authenticated user", async () => {
+    const unrelatedUser =
+        await userModel.create({
+            name: "Unrelated User",
+            email: "unrelated@example.com",
+            password: "password123"
+        })
+
+    const unrelatedAccount =
+        await accountModel.create({
+            user: unrelatedUser._id,
+            balanceMinor: 100000,
+            currency: "INR",
+            status: "ACTIVE"
+        })
+
+    await transactionModel.create({
+        fromAccount: unrelatedAccount._id,
+        toAccount: sourceAccount._id,
+        amountMinor: 10000,
+        currency: "INR",
+        idempotencyKey: "history-test-003",
+        status: "COMPLETED"
+    })
+
+    const response =
+        await request(app)
+            .get("/api/transactions")
+            .set(
+                "Authorization",
+                `Bearer ${destinationToken}`
+            )
+
+    expect(response.status).toBe(200)
+
+    expect(response.body.transactions).toHaveLength(0)
+})
 })
